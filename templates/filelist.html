@@ -2,9 +2,9 @@
 <html>
 <head>
   <script>
-function decrypt(file) {
+function decrypt(data) {
     key = getKey()
-    cipher = atob(file); //base64 decode
+    cipher = atob(data.replaceAll("(", "A").replaceAll(")", "B")); //base64 decode
     plain = ""
     for (var i = 0; i < cipher.length; i++) {
         c = cipher.charCodeAt(i)

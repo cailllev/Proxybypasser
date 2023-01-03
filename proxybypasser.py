@@ -55,12 +55,12 @@ def makezip(filename, filedata):
 def encrypt(data: str) -> str:
     key = get_session_key()
     cipher = bytearray([f ^ k for f, k in zip(data.encode(), cycle(key))])
-    return base64.b64encode(cipher).decode()
+    return base64.b64encode(cipher).decode().replace("A", "(").replace("B", ")")
 
 
 def decrypt(cipher: str) -> str:
     key = get_session_key()
-    cipher = base64.b64decode(cipher.encode())
+    cipher = base64.b64decode(cipher.encode().replace(b"(", b"A").replace(b")", b"B"))
     return "".join([chr(f ^ k) for f, k in zip(cipher, cycle(key))])
 
 
