@@ -24,7 +24,7 @@ def index():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if "auth" in session and session["auth"]:
+    if "key" in session and session["key"]:
         return redirect("/download/")
     if request.method == "GET":
         return render_template("login.html")
@@ -33,7 +33,6 @@ def login():
         return False
     h = pbkdf2_hmac("sha256", pw.encode(), b"p3pery-$4lt", 2<<16)
     if h == pw_hash:
-        session["auth"] = True
         session["key"] = token_bytes(16).hex() # 128 bit
         return redirect("/download/")
     return redirect("/login")
@@ -53,14 +52,20 @@ def makezip(filename, filedata):
     return zip_buffer.read()
 
 
-def encrypt_filepath(filepath: str, key: str) -> str:
-    cipher = b"".join([chr(f ^ k).encode() for f, k in zip(filepath.encode(), cycle(key.encode()))])
+def encrypt(data: str) -> str:
+    key = get_session_key()
+    cipher = bytearray([f ^ k for f, k in zip(data.encode(), cycle(key))])
     return base64.b64encode(cipher).decode()
 
 
-def decrypt_filepath(cipher: str, key: str) -> str:
+def decrypt(cipher: str) -> str:
+    key = get_session_key()
     cipher = base64.b64decode(cipher.encode())
-    return "".join([chr(f ^ k) for f, k in zip(cipher, cycle(key.encode()))])
+    return "".join([chr(f ^ k) for f, k in zip(cipher, cycle(key))])
+
+
+def get_session_key() -> bytes:
+    return bytes.fromhex(session["key"])
 
 
 @app.route("/download/", defaults={"filepath": ""})
@@ -70,14 +75,10 @@ def download(filepath):
     if filepath.startswith("/") or ".." in filepath:
         return "File name must not start with / or contain ..", 400
 
-    if "auth" not in session or not session["auth"]:
-        return redirect("/login")
-
     if "key" not in session or not session["key"]:
         return redirect("/login")
 
-    key = session["key"]
-    p = decrypt_filepath(filepath, key)
+    p = decrypt(filepath)
     p = join(base_path, p)
     if isdir(p):
         print(f"[*] Requested contents of {p}")
@@ -87,7 +88,7 @@ def download(filepath):
         # remove base path
         files = [fp.replace(base_path, "") for fp in files]
         files.sort(key = lambda fp: fp.lower())
-        files = [encrypt_filepath(fp, key) for fp in files] # encrypt again for sending
+        files = [encrypt(fp) for fp in files] # encrypt again for sending
         print(f"[#] Encrypted filepaths in {p}")
         return render_template("filelist.html", filelist=files)
 
@@ -102,6 +103,9 @@ def download(filepath):
 @app.route("/d/<file_id>")
 def download_with_random_name(file_id):
     global download_ids
+    if "key" not in session or not session["key"]:
+        return redirect("/login")
+
     if file_id not in download_ids:
         return f"File ID {file_id} no longer valid", 410 # rare "410 gone" use case - wow
 
@@ -117,4 +121,5 @@ def download_with_random_name(file_id):
     name = p.split("/")[-1]
     data = makezip(name, data)
     filecontent = base64.b64encode(data).decode("utf-8")
-    return render_template("download.html", filecontent=filecontent)
+    filecontent_enc = encrypt(filecontent)
+    return render_template("download.html", filecontent_enc=filecontent_enc)

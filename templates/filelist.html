@@ -3,22 +3,25 @@
 <head>
   <script>
 function decrypt(file) {
-    key = getKey();
+    key = getKey()
     cipher = atob(file); //base64 decode
     plain = ""
     for (var i = 0; i < cipher.length; i++) {
-        c = cipher.charCodeAt(i);
-        k = key.charCodeAt(i % key.length);
-        plain += String.fromCharCode(c ^ k);
+        c = cipher.charCodeAt(i)
+        k = key[i % key.length]
+        plain += String.fromCharCode(c ^ k)
     }
     return plain
 }
 
 function getKey() {
-    sessionCookie = getCookie("session");
-    data_enc = sessionCookie.split(".")[0];
-    data = atob(data_enc) //base64 decode
-    return JSON.parse(data)["key"];
+    const sessionCookie = getCookie("session")
+    const dataEnc = sessionCookie.split(".")[0]
+    const data = atob(dataEnc) //base64 decode, b.c. the session is a jwt
+    const keyHex = JSON.parse(data)["key"]
+    for (var key = [], c = 0; c < keyHex.length; c += 2)
+        key.push(parseInt(keyHex.substr(c, 2), 16))
+    return key
 }
 
 // https://www.w3schools.com/js/js_cookies.asp
@@ -39,15 +42,15 @@ function getCookie(cname) {
 }
 
 window.onload = function(){
-    let filelist = document.getElementById("filelist");
-    let files = {{filelist|safe}};
+    let filelist = document.getElementById("filelist")
+    let files = {{filelist|safe}}
     files.forEach((file) => {
-        let li = document.createElement("li");
-        let link = document.createElement("a");
-        link.href = "/download/" + file;
-        link.innerHTML = decrypt(file);
-        li.appendChild(link);
-        filelist.appendChild(li);
+        let li = document.createElement("li")
+        let link = document.createElement("a")
+        link.href = "/download/" + file
+        link.innerHTML = decrypt(file)
+        li.appendChild(link)
+        filelist.appendChild(li)
     })
 };
   </script>  

@@ -1,24 +1,61 @@
 <!doctype html>
 <html>
-<body onload="download()">
-
-    <p>Downloaded File</p>
-
-<script>
-    function download() {
-        const linkSource = `data:application/pdf;base64,{{filecontent}}`;
-        const downloadLink = document.createElement('a');
-        document.body.appendChild(downloadLink);
-    
-        downloadLink.href = linkSource;
-        downloadLink.target = '_self';
-        downloadLink.download = 'download.zip';
-        downloadLink.click(); 
+<head>
+  <script>
+function decrypt(data) {
+    key = getKey()
+    cipher = atob(data) //base64 decode
+    plain = ""
+    for (var i = 0; i < cipher.length; i++) {
+        c = cipher.charCodeAt(i)
+        k = key[i % key.length]
+        plain += String.fromCharCode(c ^ k)
     }
-</script>
+    return plain
+}
 
+function getKey() {
+    const sessionCookie = getCookie("session")
+    const dataEnc = sessionCookie.split(".")[0]
+    const data = atob(dataEnc) //base64 decode, b.c. the session is a jwt
+    const keyHex = JSON.parse(data)["key"]
+    for (var key = [], c = 0; c < keyHex.length; c += 2)
+        key.push(parseInt(keyHex.substr(c, 2), 16))
+    return key
+}
+
+// https://www.w3schools.com/js/js_cookies.asp
+function getCookie(cname) {
+  let name = cname + "=";
+  let decodedCookie = decodeURIComponent(document.cookie);
+  let ca = decodedCookie.split(';');
+  for(let i = 0; i <ca.length; i++) {
+    let c = ca[i];
+    while (c.charAt(0) == ' ') {
+      c = c.substring(1);
+    }
+    if (c.indexOf(name) == 0) {
+      return c.substring(name.length, c.length);
+    }
+  }
+  return "";
+}
+
+window.onload = function() {
+    const filecontent = decrypt('{{filecontent_enc}}')
+    const linkSource = 'data:application/pdf;base64,' + filecontent
+    const downloadLink = document.createElement('a')
+    document.body.appendChild(downloadLink)
+
+    downloadLink.href = linkSource
+    downloadLink.target = '_self'
+    downloadLink.download = 'download.zip'
+    downloadLink.click()
+}
+  </script>
+<body>
+  <p>Downloaded File</p>
 </body>
-
 </html>
 
 
