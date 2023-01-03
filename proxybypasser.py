@@ -1,20 +1,48 @@
-from flask import Flask, request, jsonify, render_template
-from os.path import isfile, join
+from flask import Flask, request, jsonify, render_template, redirect, session
+from hashlib import pbkdf2_hmac
+from itertools import cycle
+from os.path import isdir, isfile, join
 from os import listdir
+from secrets import token_bytes
 import base64
 import io
 import zipfile
 
 app = Flask(__name__)
+app.secret_key = token_bytes(32) # 256 bit
+app.config['SESSION_COOKIE_HTTPONLY'] = False # client side JS needs access to the decryption key
+pw_hash = b"\xe1\xe62f\x1e\x93\x05\x8b\xcb\xbd\xba\xf6:\xdd9\x9f\xf6\t\xe0\x07G\xc1\xbc\xd8\x06\xd1V_&\xd2e\x18"
 
-path = '/'
+base_path = "/mnt/public/"
+download_ids = {}
 
-@app.route('/')
+
+@app.route("/")
 def index():
-    files = listdir(path)
-    print(str(files))
+    return redirect("/login")
 
-    return render_template('filelist.html', filelist=files)
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if "auth" in session and session["auth"]:
+        return redirect("/download/")
+    if request.method == "GET":
+        return render_template("login.html")
+    pw = request.form.get("password")
+    if pw is None:
+        return False
+    h = pbkdf2_hmac("sha256", pw.encode(), b"p3pery-$4lt", 2<<16)
+    if h == pw_hash:
+        session["auth"] = True
+        session["key"] = token_bytes(16).hex() # 128 bit
+        return redirect("/download/")
+    return redirect("/login")
+
+
+@app.route("/logout", methods=["GET"])
+def logout():
+        session.clear()
+        return redirect("/login")
 
 
 def makezip(filename, filedata):
@@ -25,22 +53,68 @@ def makezip(filename, filedata):
     return zip_buffer.read()
 
 
-@app.route('/download/<filename>')
-def download(filename):
-    p = join(path, filename)
-    data = None
+def encrypt_filepath(filepath: str, key: str) -> str:
+    cipher = b"".join([chr(f ^ k).encode() for f, k in zip(filepath.encode(), cycle(key.encode()))])
+    return base64.b64encode(cipher).decode()
+
+
+def decrypt_filepath(cipher: str, key: str) -> str:
+    cipher = base64.b64decode(cipher.encode())
+    return "".join([chr(f ^ k) for f, k in zip(cipher, cycle(key.encode()))])
+
+
+@app.route("/download/", defaults={"filepath": ""})
+@app.route("/download/<path:filepath>")
+def download(filepath):
+    # secure_filename removes trailing /, but this is required here
+    if filepath.startswith("/") or ".." in filepath:
+        return "File name must not start with / or contain ..", 400
+
+    if "auth" not in session or not session["auth"]:
+        return redirect("/login")
+
+    if "key" not in session or not session["key"]:
+        return redirect("/login")
+
+    key = session["key"]
+    p = decrypt_filepath(filepath, key)
+    p = join(base_path, p)
+    if isdir(p):
+        print(f"[*] Requested contents of {p}")
+        files = [join(p, fp) for fp in listdir(p)]
+        # appends / for directories
+        files = [fp + "/" if isdir(fp) else fp for fp in files]
+        # remove base path
+        files = [fp.replace(base_path, "") for fp in files]
+        files.sort(key = lambda fp: fp.lower())
+        files = [encrypt_filepath(fp, key) for fp in files] # encrypt again for sending
+        print(f"[#] Encrypted filepaths in {p}")
+        return render_template("filelist.html", filelist=files)
+
+    print(f"[*] Requested download for {p}")
+    global download_ids
+    file_id = token_bytes(16).hex() # 128 bit
+    download_ids[file_id] = p
+    print(f"[#] Created id: {file_id} => {p}")
+    return redirect(f"/d/{file_id}")
+
+
+@app.route("/d/<file_id>")
+def download_with_random_name(file_id):
+    global download_ids
+    if file_id not in download_ids:
+        return f"File ID {file_id} no longer valid", 410 # rare "410 gone" use case - wow
+
+    p = download_ids.pop(file_id) # id only valid for one download
+    print(f"[#] Got id {file_id} => downloading {p}")
+
+    if not isfile(p):
+        return "ID valid but file not found", 404
+
     with open(p, "rb") as file:
         data = file.read()
 
-    data = makezip(filename, data)
+    name = p.split("/")[-1]
+    data = makezip(name, data)
     filecontent = base64.b64encode(data).decode("utf-8")
-    print(str(filecontent))
-    return render_template('download.html', 
-        filename=filename + ".zip", filecontent=filecontent)
-
-def run_server():
-    app.run("0.0.0.0", "8081")
-
-
-if __name__ == "__main__":
-    run_server()
+    return render_template("download.html", filecontent=filecontent)

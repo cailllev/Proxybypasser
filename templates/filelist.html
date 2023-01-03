@@ -1,18 +1,59 @@
 <!doctype html>
 <html>
+<head>
+  <script>
+function decrypt(file) {
+    key = getKey();
+    cipher = atob(file); //base64 decode
+    plain = ""
+    for (var i = 0; i < cipher.length; i++) {
+        c = cipher.charCodeAt(i);
+        k = key.charCodeAt(i % key.length);
+        plain += String.fromCharCode(c ^ k);
+    }
+    return plain
+}
+
+function getKey() {
+    sessionCookie = getCookie("session");
+    data_enc = sessionCookie.split(".")[0];
+    data = atob(data_enc) //base64 decode
+    return JSON.parse(data)["key"];
+}
+
+// https://www.w3schools.com/js/js_cookies.asp
+function getCookie(cname) {
+  let name = cname + "=";
+  let decodedCookie = decodeURIComponent(document.cookie);
+  let ca = decodedCookie.split(';');
+  for(let i = 0; i <ca.length; i++) {
+    let c = ca[i];
+    while (c.charAt(0) == ' ') {
+      c = c.substring(1);
+    }
+    if (c.indexOf(name) == 0) {
+      return c.substring(name.length, c.length);
+    }
+  }
+  return "";
+}
+
+window.onload = function(){
+    let filelist = document.getElementById("filelist");
+    let files = {{filelist|safe}};
+    files.forEach((file) => {
+        let li = document.createElement("li");
+        let link = document.createElement("a");
+        link.href = "/download/" + file;
+        link.innerHTML = decrypt(file);
+        li.appendChild(link);
+        filelist.appendChild(li);
+    })
+};
+  </script>  
+</head>
 <body>
-
-    <h1>Filelist</h1>
-
-    <ul>
-        {% for file in filelist %}
-        <li><a href="/download/{{file}}">{{file}}</a></li>
-        {% endfor %}
-
-    </ul>
+  <h1>Filelist</h1>
+  <ul id="filelist"></ul>
 </body>
-
 </html>
-
-
-
