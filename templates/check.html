@@ -26,27 +26,25 @@ function parseKey() {
 }
 
 window.onload = function() {
-    parseKey().then((key) => {    
+    parseKey().then((key) => {
+        const f = document.getElementById("checkForm")
         const ivBuffer = hex2ab('{{iv}}')
-        const cipherBuffer = hex2ab('{{filecontent_enc}}')
-        const p = document.getElementById("downloadStatus")
+        const cipherBuffer = hex2ab('{{test_val_enc}}')
         decryptAES(key, ivBuffer, cipherBuffer).then((plain) => {
-            p.innerHTML = "Downloading File..."
-            const filecontent = ab2str(plain)
-            const linkSource = 'data:application/pdf;base64,' + filecontent
-            const downloadLink = document.createElement('a')
-            document.body.appendChild(downloadLink)
-
-            downloadLink.href = linkSource
-            downloadLink.target = '_self'
-            downloadLink.download = 'download.zip'
-            downloadLink.click()
-        }).catch((err) => p.innerHTML = "Decryption failed!")
+            document.getElementById("testVal").value = ab2str(plain)
+            f.submit()
+        }).catch((err) => f.submit())
     })
 }
   </script>
 <body>
-  <p id="downloadStatus">Decrypting File...</p>
+  <p>Check Secret Key...</p>
+  <form id="checkForm" action="/check" method="POST" class="Form">
+    <input name="iv" value="{{iv}}" hidden="true"/>
+    <input name="testValEnc" value="{{test_val_enc}}" hidden="true"/>
+    <input id="testVal" name="testVal" value="to be calculated..." hidden="true"/>
+    <!--<input type="submit" value="Checking..." class="button"/>-->
+  </form>
 </body>
 </html>
 

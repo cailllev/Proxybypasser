@@ -3,28 +3,23 @@
 <head>
   <script>
 function decryptAES(key, iv, cipher) {
-    console.log("iv:", iv, "cipher:", cipher)
     return window.crypto.subtle.decrypt({name: "AES-GCM", iv}, key, cipher);
 }
 
 function ab2str(buf) {
-  return String.fromCharCode.apply(null, new Uint8Array(buf));
+    return String.fromCharCode.apply(null, new Uint8Array(buf));
 }
 
-function hex2ab(s) {
-    return Uint8Array.from(fromHex(s), c => c.charCodeAt(0)).buffer
-}
-
-function fromHex(hex) {
-    let str = '';
-    for (var i = 0; i < hex.length; i += 2)
-        str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
-    return str;
+function hex2ab(hexStr) {
+    let ints = []
+    for (let i = 0; i < hexStr.length; i += 2) {
+        ints.push(parseInt(hexStr.substr(i, 2), 16))
+    }
+    return Uint8Array.from(ints).buffer
 }
 
 function parseKey() {
-    //let rawKey = localStorage.getItem("secretKey").split(",")
-    let rawKey = "101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101,101".split(",")
+    let rawKey = localStorage.getItem("secretKey").split(",")
     rawKey = rawKey.map((n) => Number(n))
     rawKey = Uint8Array.from(rawKey).buffer
     return window.crypto.subtle.importKey("raw", rawKey, "AES-GCM", true, ["encrypt", "decrypt"])

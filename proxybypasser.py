@@ -1,11 +1,7 @@
 from base64 import b64encode, b64decode
-from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.hashes import SHA256
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_public_key
 from flask import Flask, request, jsonify, render_template, redirect, session
-from hashlib import pbkdf2_hmac
+from hashlib import pbkdf2_hmac, sha256
 from itertools import cycle
 from os.path import isdir, isfile, join
 from os import listdir
@@ -16,99 +12,20 @@ import zipfile
 app = Flask(__name__)
 app.secret_key = token_bytes(32) # 256 bit
 login_pw_hash = b"\xe1\xe62f\x1e\x93\x05\x8b\xcb\xbd\xba\xf6:\xdd9\x9f\xf6\t\xe0\x07G\xc1\xbc\xd8\x06\xd1V_&\xd2e\x18"
-#pre_secret = "Password > ECDH?"
+pre_secret = b"Password > ECDH?"
 
 base_path = "/mnt/public/"
-# invalidate keys over time?
 pre_keys = {}
 secret_keys = {}
 download_ids = {}
 
 
-def create_ec_keypair() -> (ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey):
-    private_key = ec.generate_private_key(ec.SECP384R1())
-    public_key = private_key.public_key()
-    return private_key, public_key
-
-
-def convert_to_pem(public_key: ec.EllipticCurvePublicKey) -> str:
-    return public_key.public_bytes(
-        encoding=Encoding.PEM,
-        format=PublicFormat.SubjectPublicKeyInfo
-    ).decode()
-
-
-def convert_from_pem(data: bytes) -> ec.EllipticCurvePublicKey:
-    return load_pem_public_key(data)
-
-
-# TODO, incompatible with JS crypto?
-def derive_secret_key(
-        server_private_key: ec.EllipticCurvePrivateKey,
-        client_public_key: ec.EllipticCurvePublicKey,
-) -> AESGCM:
-    shared_key = server_private_key.exchange(ec.ECDH(), client_public_key)
-    derived_key = HKDF(
-        algorithm=SHA256(),
-        length=32, #256bit
-        salt=b"",
-        info=b"secret key"
-    ).derive(shared_key)
-    print("raw secret", [c for c in derived_key])
-    aesgcm = AESGCM(derived_key)
-    return aesgcm
-
-
-@app.route("/")
-def index():
-    return redirect("/login")
-
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    global pre_keys, secret_keys
-
-    if "id" in session and session["id"] in secret_keys:
-        return redirect("/download/")
-
-    if request.method == "GET":
-        private_key, public_key = create_ec_keypair()
-        pem = convert_to_pem(public_key)
-        pre_keys[pem] = (private_key, public_key)
-        pem_b64 = b64encode(pem.encode()).decode()
-        return render_template("login.html", server_pem_b64=pem_b64)
-
-    # POST
-    pw = request.form.get("password")
-    server_pem = b64decode(request.form.get("serverPEMb64").encode()).decode()
-    client_pem = b64decode(request.form.get("clientPEMb64").encode()).decode()
-    if not client_pem or server_pem not in pre_keys:
-        print("client or server pem not found")
-        return redirect("/login")
-    server_private_key, server_public_key = pre_keys.pop(server_pem)
-
-    if not pw:
-        return redirect("/login")
-
-    client_public_key = convert_from_pem(client_pem.encode())
-    h = pbkdf2_hmac("sha256", pw.encode(), b"p3pery-$4lt", 2<<16)
-    if h == login_pw_hash: # create new secret key for each login
-        secret_key = derive_secret_key(server_private_key, client_public_key)
-        secret_key = AESGCM(b"e"*32) # TODO
-        session_id = token_bytes(8)
-        session["id"] = session_id # token_bytes(16).hex() # 128 bit
-        secret_keys[session_id] = secret_key
-        return redirect("/download/")
-
-    return redirect("/login")
-
-
-@app.route("/logout", methods=["GET"])
-def logout():
-    if "id" in session and session["id"] in secret_keys:
-        secret_keys.pop(session["id"])
-    session.clear()
-    return redirect("/login")
+def derive_secret_key(client_random, server_random) -> AESGCM:
+    c = int(client_random).to_bytes(4, byteorder="big")
+    s = int(server_random).to_bytes(4, byteorder="big")
+    key_material = pre_secret + c + s
+    derived_key = sha256(key_material).digest() # JS only supports sha256 natively... (f JS)
+    return AESGCM(derived_key)
 
 
 def makezip(filename, filedata):
@@ -129,6 +46,71 @@ def decrypt_aes(cipher: str, iv: str, key: AESGCM) -> str:
     iv = bytes.fromhex(iv)
     cipher = bytes.fromhex(cipher)
     return key.decrypt(iv, cipher, None).decode()
+
+
+@app.route("/")
+def index():
+    return redirect("/login")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    global pre_keys, secret_keys
+
+    if "id" in session and session["id"] in secret_keys:
+        return redirect("/download/")
+
+    if request.method == "GET":
+        r = int.from_bytes(token_bytes(4), byteorder="big")
+        return render_template("login.html", server_random=r)
+
+    pw = request.form.get("password")
+    client_random = request.form.get("clientRandom")
+    server_random = request.form.get("serverRandom")
+    if not pw or not client_random or not server_random:
+        return redirect("/login")
+
+    h = pbkdf2_hmac("sha256", pw.encode(), b"p3pery-$4lt", 2<<16)
+    if h == login_pw_hash: # create new secret key for each login
+        secret_key = derive_secret_key(client_random, server_random)
+        session_id = token_bytes(8)
+        session["id"] = session_id
+        secret_keys[session_id] = secret_key
+        print(f"[*] Created new key for {session_id}")
+        return redirect("/check")
+
+    return redirect("/login")
+
+
+@app.route("/check", methods=["GET", "POST"])
+def check_keys():
+    if "id" not in session or not session["id"] in secret_keys:
+        return redirect("/login")
+    key = secret_keys[session["id"]]
+
+    if request.method == "GET":
+        test_val = token_bytes(32).hex()
+        iv, cipher = encrypt_aes(test_val, key)
+        return render_template("check.html", iv=iv, test_val=test_val, test_val_enc=cipher)
+
+    iv = request.form.get("iv")
+    test_val = request.form.get("testVal")
+    test_val_enc = request.form.get("testValEnc")
+    if not iv or not test_val or not test_val_enc:
+        return redirect("/login")
+
+    if test_val == decrypt_aes(test_val_enc, iv, key):
+        return redirect("/download/")
+
+    return redirect("/logout") # wrong pre-secret
+
+
+@app.route("/logout", methods=["GET"])
+def logout():
+    if "id" in session and session["id"] in secret_keys:
+        secret_keys.pop(session["id"])
+    session.clear()
+    return redirect("/login")
 
 
 @app.route("/download/", defaults={"filepath": ""})

@@ -3,85 +3,54 @@
   <head>
     <title>Proxybypasser</title>
     <script>
-const header = "-----BEGIN PUBLIC KEY-----"
-const footer = "-----END PUBLIC KEY-----"
-
-function ab2str(buf) {
-    return String.fromCharCode.apply(null, new Uint8Array(buf));
+async function sha256(ints) {
+    const buf = new Uint8Array(ints);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buf);
+    return Array.from(new Uint8Array(hashBuffer));
 }
 
-function str2ab(str) {
-    const buf = new ArrayBuffer(str.length);
-    const bufView = new Uint8Array(buf);
-    for (let i = 0, strLen = str.length; i < strLen; i++) {
-        bufView[i] = str.charCodeAt(i);
+function str2ints(s) {
+    l = []
+    for (let i = 0; i < s.length; i++) { 
+        l.push(s.charCodeAt(i))
     }
-    return buf;
+    return l
 }
 
-function toHex(str) {
-    let hex = '';
-    for (var i=0; i<str.length; i++) {
-      hex += str.charCodeAt(i).toString(16);
+function int2bytes(x) { // 4 bytes
+    var bytes = [];
+    for (let i = 3; i >= 0; i--) {
+        bytes[i] = x & (255);
+        x = x>>8;
     }
-    return hex;
+    return bytes;
 }
 
-function fromHex(hex) {
-    let str = '';
-    for (var i = 0; i < hex.length; i += 2)
-        str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
-    return str;
-}
-
-async function exportPublicKey(key) {
-    const exported = await window.crypto.subtle.exportKey("spki", key);
-    const exportedAsString = ab2str(exported);
-    const exportedAsBase64 = window.btoa(exportedAsString);
-    return pemExported = `${header}\n${exportedAsBase64}\n${footer}`;
-}
-
-async function genKeypair() {
-    const keypair = await window.crypto.subtle.generateKey(
-      {name: "ECDH", namedCurve: "P-384"}, false, ["deriveKey"]
-    )
-    return keypair
+function int2str(x) { // 4 bytes
+    let s = "";
+    for (let i = 3; i >= 0; i--) {
+        s = String.fromCharCode(x & (255)) + s; // builds s from back to front
+        x = x>>8;
+    }
+    return s;
 }
 
 window.onload = function() {
-    genKeypair().then((keypair) => {
-        const clientPrivateKey = keypair.privateKey
-        exportPublicKey(keypair.publicKey).then((clientPEM) => {
+    const t = Math.round(new Date().getTime()/1000)
+    const field = document.getElementById("loginForm")
+    const clientRandomInt = Math.round(Math.random() * 2**32)
+    document.getElementById("clientRandom").value = clientRandomInt
+    const clientRandom = int2bytes(clientRandomInt)
+    const serverRandom = int2bytes({{server_random}})
 
-            // append clientPublicKey to form, so the server can derive the same secretKey
-            const f = document.getElementById("loginForm")
-            let newField = document.createElement("input")
-            newField.type = "text"
-            newField.hidden = "true"
-            newField.name = "clientPEMb64"
-            newField.value = btoa(clientPEM)
-            f.append(newField)
-
-            // parse server public key
-            const serverPEM = atob(document.getElementById("serverPEMb64").value)
-            const pemContents = serverPEM.substring(header.length + 1, serverPEM.length - footer.length - 1)
-            const binaryDerString = window.atob(pemContents)
-            const binaryDer = str2ab(binaryDerString)
-            window.crypto.subtle.importKey(
-                "spki", binaryDer, {name: "ECDH", namedCurve: "P-384"}, false, [] // should be deriveKey, but strange bug
-            ).then((serverPublicKey) => {
-
-                // generate derived secret key and store it into localStorage
-                window.crypto.subtle.deriveKey(
-                    {name: "ECDH", public: serverPublicKey}, clientPrivateKey, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"]
-                ).then((secretKey) => {
-                    window.crypto.subtle.exportKey("raw", secretKey).then((exported) => {
-                        localStorage.setItem("secretKey", new Uint8Array(exported))
-                    })
-                })
-            })
-        })
-    })
+    document.getElementById("loginForm").onsubmit = function() {
+        // derive shared key
+        const preSecret = document.getElementById("preSecret")
+        const userPreSecret = str2ints(preSecret.value)
+        field.removeChild(preSecret)
+        const keyMaterial = userPreSecret.concat(clientRandom).concat(serverRandom)
+        sha256(keyMaterial).then((hash) => localStorage.setItem("secretKey", hash))
+    };
 }
     </script>
   </head>
@@ -89,7 +58,9 @@ window.onload = function() {
     <h1>Login</h1>
     <form id="loginForm" action="/login" method="POST" class="Form">
       <input type="password" name="password" placeholder="Password"/>
-      <input id="serverPEMb64" type="text" name="serverPEMb64" value="{{server_pem_b64}}" hidden="true"/>
+      <input id="preSecret" type="password" name="preSecret" placeholder="Pre-Secret"/>
+      <input id="clientRandom" name="clientRandom" value=0 hidden="true"/>
+      <input id="serverRandom" name="serverRandom" value={{server_random}} hidden="true"/>
       <input type="submit" value="Login" class="button"/>
     </form>
   </body>
