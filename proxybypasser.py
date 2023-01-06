@@ -6,13 +6,15 @@ from itertools import cycle
 from os.path import isdir, isfile, join
 from os import listdir
 from secrets import token_bytes
+from werkzeug.exceptions import HTTPException
 import io
 import zipfile
 
+# init app and secret key
 app = Flask(__name__)
 app.secret_key = token_bytes(32) # 256 bit
 login_pw_hash = b"\xe1\xe62f\x1e\x93\x05\x8b\xcb\xbd\xba\xf6:\xdd9\x9f\xf6\t\xe0\x07G\xc1\xbc\xd8\x06\xd1V_&\xd2e\x18"
-pre_secret = b"Password > ECDH?"
+pre_secret = b"Password > ECDH?" # can be changed, but invalidates existing sessions
 
 base_path = "/mnt/public/"
 pre_keys = {}
@@ -74,9 +76,10 @@ def login():
     if h == login_pw_hash: # create new secret key for each login
         secret_key = derive_secret_key(client_random, server_random)
         session_id = token_bytes(8)
-        session["id"] = session_id
         secret_keys[session_id] = secret_key
         print(f"[*] Created new key for {session_id}")
+        session["id"] = session_id
+        session.permanent = True # do not expire session after closing the browser
         return redirect("/check")
 
     return redirect("/login")
@@ -147,6 +150,7 @@ def download(filepath):
         return render_template("filelist.html", filelist=files_enc)
 
     print(f"[*] Requested download for {p}")
+    # fp = "/" + "/".join(p.split("/")[:-1]) + "/" # /a/b/c.txt -> /a/b/
     global download_ids
     file_id = token_bytes(16).hex() # 128 bit
     download_ids[file_id] = p
@@ -174,7 +178,19 @@ def download_with_random_name(file_id):
         data = file.read()
 
     name = p.split("/")[-1]
+    fp = p[len(base_path):-len(name)]
+    fp_iv, fp_enc = encrypt_aes(fp, key)
     data = makezip(name, data)
     filecontent = b64encode(data).decode("utf-8")
     iv, cipher = encrypt_aes(filecontent, key)
-    return render_template("download.html", filecontent_enc=cipher, iv=iv)
+    return render_template("download.html", filecontent_enc=cipher, iv=iv, fp_enc=fp_enc, fp_iv=fp_iv)
+
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    if isinstance(e, HTTPException): # don't catch 4xx errors
+        return e
+
+    print(f"[!] Error: {e}")
+    return "Bad Request<!--you made the server vewy angwy, pls stop-->", 400
+
