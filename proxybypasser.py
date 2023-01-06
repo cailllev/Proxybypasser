@@ -119,10 +119,6 @@ def logout():
 @app.route("/download/", defaults={"filepath": ""})
 @app.route("/download/<path:filepath>")
 def download(filepath):
-    # secure_filename removes trailing /, but this is required here
-    if filepath.startswith("/") or ".." in filepath:
-        return "File name must not start with / or contain ..", 400
-
     if "id" not in session or not session["id"] in secret_keys:
         return redirect("/login")
     key = secret_keys[session["id"]]
@@ -130,8 +126,15 @@ def download(filepath):
     if filepath != "": # non empty file(path) requested
         iv = request.args.get("iv")
         if not iv:
-            return "IV missing", 400
+            print("[#] IV missing in request!")
+            return redirect("/download/")
         filepath = decrypt_aes(filepath, iv, key)
+
+    # secure_filename removes all /, not working here
+    if ".." in filepath:
+        return "File name must not contain ..", 400
+    while filepath.startswith("/"): # path.join("/a/b", "/c") -> "/c", NOT "/a/b/c"
+        filepath = filepath[1:]
 
     p = join(base_path, filepath)
     if isdir(p):
@@ -147,7 +150,11 @@ def download(filepath):
             iv, cipher = encrypt_aes(fp, key)
             files_enc.append({"iv": iv, "name": cipher})
         print(f"[#] Encrypted filepaths in {p}")
-        return render_template("filelist.html", filelist=files_enc)
+        # add last folder to navigate back
+        back = "/".join(filepath.split("/")[:-2]) + "/"
+        iv, cipher = encrypt_aes(back, key)
+        files_enc.insert(0, {"iv": iv, "name": cipher})
+        return render_template("filelist.html", filelist=files_enc, back_cipher=cipher, back_iv=iv)
 
     print(f"[*] Requested download for {p}")
     # fp = "/" + "/".join(p.split("/")[:-1]) + "/" # /a/b/c.txt -> /a/b/
