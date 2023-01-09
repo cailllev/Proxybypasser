@@ -25,14 +25,29 @@ function parseKey() {
     return window.crypto.subtle.importKey("raw", rawKey, "AES-GCM", true, ["encrypt", "decrypt"])
 }
 
+function toggleBypass() {
+    const bypass = document.getElementById("sizeBypass").checked
+    const filelist = document.getElementById("filelist")
+    for (let i = 0; i < filelist.children.length; i++) {
+        const link = filelist.children[i].children[0];
+        if (bypass) {
+            link.href += "&b=1"
+        } else {
+            link.href = link.href.substring(0, link.href.length - 4)
+        }
+    }
+}
+
 window.onload = function(){
     parseKey().then((key) => {
-        let filelist = document.getElementById("filelist")
-        let files = {{filelist|safe}}
+        const filelist = document.getElementById("filelist")
+        const bypass = document.getElementById("sizeBypass").checked
+        const files = {{filelist|safe}}
         files.forEach((file) => {
-            let li = document.createElement("li")
-            let link = document.createElement("a")
+            const li = document.createElement("li")
+            const link = document.createElement("a")
             link.href = "/download/" + file.name + "?iv=" + file.iv
+            if (bypass) { link.href += "&b=1" }
             const ivBuffer = hex2ab(file.iv)
             const cipherBuffer = hex2ab(file.name)
             decryptAES(key, ivBuffer, cipherBuffer).then((plain) => {
@@ -47,6 +62,7 @@ window.onload = function(){
 </head>
 <body>
   <h1>Filelist</h1>
+  <p><input type="checkbox" id="sizeBypass" name="sizeBypass" {{checked}} onchange="toggleBypass()"/>Size Bypass (~15 sec)</p>
   <ul id="filelist"></ul>
 </body>
 </html>

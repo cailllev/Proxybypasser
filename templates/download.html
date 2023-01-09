@@ -7,7 +7,12 @@ function decryptAES(key, iv, cipher) {
 }
 
 function ab2str(buf) {
-    return String.fromCharCode.apply(null, new Uint8Array(buf));
+    let s = "";
+    const max_size = 124_000; // else "RangeError: Maximum call stack size exceeded", chrome ~ 125_283, edge ~ 125_503
+    for (let i = 0; i < buf.byteLength; i+=max_size) {
+        s += String.fromCharCode.apply(null, new Uint8Array(buf.slice(i, i+max_size)));
+    }
+    return s
 }
 
 function hex2ab(hexStr) {
@@ -41,7 +46,7 @@ window.onload = function() {
             downloadLink.target = '_self'
             downloadLink.download = 'download.zip'
             downloadLink.click()
-        }).catch((err) => p.innerHTML = "Decryption failed!")
+        }).catch((err) => {console.log(err); p.innerHTML = "Decryption failed!"})
     })
 }
   </script>

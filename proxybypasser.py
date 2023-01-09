@@ -2,13 +2,13 @@ from base64 import b64encode, b64decode
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from flask import Flask, request, jsonify, render_template, redirect, session
 from hashlib import pbkdf2_hmac, sha256
+from io import BytesIO
 from itertools import cycle
 from os.path import isdir, isfile, join
 from os import listdir
 from secrets import token_bytes
 from werkzeug.exceptions import HTTPException
-import io
-import zipfile
+from zipfile import ZipFile, ZIP_DEFLATED
 
 # init app and secret key
 app = Flask(__name__)
@@ -32,12 +32,15 @@ def derive_secret_key(client_random, server_random) -> AESGCM:
     return AESGCM(derived_key)
 
 
-def makezip(filename, filedata):
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+def makezip(filename, filedata, bypass):
+    buffer = BytesIO()
+    with ZipFile(buffer, "w", compression=ZIP_DEFLATED, allowZip64=False) as zip_file:
         zip_file.writestr(filename, filedata)
-    zip_buffer.seek(0)
-    return zip_buffer.read()
+        if bypass:
+            random_data = token_bytes(51_000) * 1024 # defender doesn't scan downloaded files > 50MB
+            zip_file.writestr("random.bin", random_data)
+    buffer.seek(0)
+    return buffer.read()
 
 
 def encrypt_aes(data: str, key: AESGCM) -> [str, str]:
@@ -124,9 +127,11 @@ def logout():
 @app.route("/download/", defaults={"filepath": ""})
 @app.route("/download/<path:filepath>")
 def download(filepath):
+    global download_ids
     if "id" not in session or not session["id"] in secret_keys:
         return redirect("/login")
     key, name = secret_keys[session["id"]]
+    size_bypass = True if request.args.get("b") else False
 
     if filepath != "": # non empty file(path) requested
         iv = request.args.get("iv")
@@ -158,14 +163,18 @@ def download(filepath):
         back = "/".join(filepath.split("/")[:-2]) + "/"
         iv, cipher = encrypt_aes(back, key)
         files_enc.insert(0, {"iv": iv, "name": cipher})
-        return render_template("filelist.html", filelist=files_enc, back_cipher=cipher, back_iv=iv)
+        checked = "checked" if size_bypass else ""
+        return render_template("filelist.html", filelist=files_enc, back_cipher=cipher, back_iv=iv, checked=checked)
 
-    print(f"[*] {name} requested download for {p}")
-    global download_ids
+    print(f"[*] {name} requested download for {p} with bypass = {size_bypass}")
     file_id = token_bytes(16).hex() # 128 bit
     download_ids[file_id] = p
     print(f"[#] Created id: {file_id} => {p}")
-    return redirect(f"/d/{file_id}")
+
+    link = f"/d/{file_id}"
+    if size_bypass:
+        link += "?b=1"
+    return redirect(link)
 
 
 @app.route("/d/<file_id>")
@@ -181,7 +190,8 @@ def download_with_random_name(file_id):
     p = download_ids.pop(file_id) # id only valid for one download
     if not isfile(p):
         return "ID valid but file not found", 404
-    print(f"[*] {name} sent id {file_id} => downloading {p}")
+    size_bypass = True if request.args.get("b") else False
+    print(f"[*] {name} sent id {file_id} => downloading {p} with bypass = {size_bypass}")
 
     with open(p, "rb") as file:
         data = file.read()
@@ -189,7 +199,7 @@ def download_with_random_name(file_id):
     filename = p.split("/")[-1]
     filepath = p[len(base_path):-len(filename)]
     fp_iv, fp_enc = encrypt_aes(filepath, key)
-    data = makezip(filename, data)
+    data = makezip(filename, data, size_bypass)
     filecontent = b64encode(data).decode("utf-8")
     iv, cipher = encrypt_aes(filecontent, key)
     return render_template("download.html", filecontent_enc=cipher, iv=iv, fp_enc=fp_enc, fp_iv=fp_iv)
