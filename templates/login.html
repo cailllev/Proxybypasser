@@ -7,7 +7,7 @@ async function sha256_16(ints) {
     const buf = new Uint8Array(ints);
     let hashBuffer = buf;
     for (let i = 0; i < 2<<16; i++) {
-        hashBuffer = await crypto.subtle.digest('SHA-256', hashBuffer);
+        hashBuffer = await crypto.subtle.digest("SHA-256", hashBuffer);
     }
     return Array.from(new Uint8Array(hashBuffer));
 }
@@ -27,15 +27,6 @@ function int2bytes(x) { // 4 bytes
         x = x>>8;
     }
     return bytes;
-}
-
-function int2str(x) { // 4 bytes
-    let s = "";
-    for (let i = 3; i >= 0; i--) {
-        s = String.fromCharCode(x & (255)) + s; // builds s from back to front
-        x = x>>8;
-    }
-    return s;
 }
 
 function calculateSecretKey() {
@@ -65,7 +56,6 @@ function calculateSecretKey() {
       <input id="clientRandom" name="clientRandom" value=0 hidden="true"/>
       <input id="serverRandom" name="serverRandom" value={{server_random}} hidden="true"/>
       <input id="loginButton" type="button" value="Login" onclick="calculateSecretKey()"/>
-      <!--<input type="submit" value="Login" class="button"/>-->
     </form>
   </body>
 </html>
