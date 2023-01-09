@@ -8,7 +8,7 @@ from os.path import isdir, isfile, join
 from os import listdir
 from secrets import token_bytes
 from werkzeug.exceptions import HTTPException
-from zipfile import ZipFile, ZIP_DEFLATED
+from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
 
 # init app and secret key
 app = Flask(__name__)
@@ -20,6 +20,8 @@ pre_secret = b"Password > ECDH?" # change before deploying
 base_path = "/mnt/public/"
 secret_keys = {}
 download_ids = {}
+
+av_bypass_size = 50_000 * 1024 # defender doesn't scan downloaded files > 50MB
 
 
 def derive_secret_key(client_random, server_random) -> AESGCM:
@@ -34,11 +36,14 @@ def derive_secret_key(client_random, server_random) -> AESGCM:
 
 def makezip(filename, filedata, bypass):
     buffer = BytesIO()
-    with ZipFile(buffer, "w", compression=ZIP_DEFLATED, allowZip64=False) as zip_file:
-        zip_file.writestr(filename, filedata)
-        if bypass:
-            random_data = token_bytes(51_000) * 1024 # defender doesn't scan downloaded files > 50MB
-            zip_file.writestr("random.bin", random_data)
+    if not bypass:
+        with ZipFile(buffer, "w", compression=ZIP_DEFLATED, allowZip64=False) as zip_file:
+            zip_file.writestr(filename, filedata)
+    else:
+        num_bypass_bytes = av_bypass_size - len(filedata)
+        with ZipFile(buffer, "a", compression=ZIP_STORED, allowZip64=False) as zip_file:
+            zip_file.writestr(filename, filedata)
+            zip_file.writestr("junk.bin", b"A" * num_bypass_bytes)
     buffer.seek(0)
     return buffer.read()
 
@@ -199,13 +204,22 @@ def download_with_random_name(file_id):
     filename = p.split("/")[-1]
     filepath = p[len(base_path):-len(filename)]
     fp_iv, fp_enc = encrypt_aes(filepath, key)
-    data = makezip(filename, data, size_bypass)
-    filecontent = b64encode(data).decode("utf-8")
-    iv, cipher = encrypt_aes(filecontent, key)
-    return render_template("download.html", filecontent_enc=cipher, iv=iv, fp_enc=fp_enc, fp_iv=fp_iv)
+    data_zipped = makezip(filename, data, size_bypass)
+    data_b64 = b64encode(data_zipped).decode("utf-8")
+
+    if size_bypass: # only encrypt the file data, not the random bytes
+        len_real_data = int(len(data) / 6 * 8) + 1 # b64encoded length
+        len_real_data += 100 # zip header & co
+        to_encrypt = data_b64[:len_real_data]
+        junk = data_b64[len_real_data:]
+        bypass_query = "&b=1"
+    else:
+        to_encrypt = data_b64
+        junk = bypass_query = ""
+    iv, cipher = encrypt_aes(to_encrypt, key)
+    return render_template("download.html", filecontent_enc=cipher, iv=iv, junk=junk, fp_enc=fp_enc, fp_iv=fp_iv, bypass_query=bypass_query)
 
 
-"""
 @app.errorhandler(Exception)
 def handle_exception(e):
     if isinstance(e, HTTPException): # don't catch 4xx errors
@@ -213,4 +227,3 @@ def handle_exception(e):
 
     print(f"[!] Error: {e}")
     return "Bad Request<!--you made the server vewy angwy, pls stop-->", 400
-"""

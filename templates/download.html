@@ -38,7 +38,7 @@ window.onload = function() {
         decryptAES(key, ivBuffer, cipherBuffer).then((plain) => {
             p.innerHTML = "Downloading File..."
             const filecontent = ab2str(plain)
-            const linkSource = 'data:application/pdf;base64,' + filecontent
+            const linkSource = 'data:application/pdf;base64,' + filecontent + '{{junk}}'
             const downloadLink = document.createElement('a')
             document.body.appendChild(downloadLink)
 
@@ -52,7 +52,7 @@ window.onload = function() {
   </script>
 <body>
   <p id="downloadStatus">Decrypting File...</p>
-  <p><a href="/download/{{fp_enc}}?iv={{fp_iv}}">Back to Filelist</a></p>
+  <p><a href="/download/{{fp_enc}}?iv={{fp_iv}}{{bypass_query}}">Back to Filelist</a></p>
 </body>
 </html>
 
