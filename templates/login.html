@@ -3,9 +3,12 @@
   <head>
     <title>Proxybypasser</title>
     <script>
-async function sha256(ints) {
+async function sha256_16(ints) {
     const buf = new Uint8Array(ints);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', buf);
+    let hashBuffer = buf;
+    for (let i = 0; i < 2<<16; i++) {
+        hashBuffer = await crypto.subtle.digest('SHA-256', hashBuffer);
+    }
     return Array.from(new Uint8Array(hashBuffer));
 }
 
@@ -35,33 +38,34 @@ function int2str(x) { // 4 bytes
     return s;
 }
 
-window.onload = function() {
-    const t = Math.round(new Date().getTime()/1000)
-    const field = document.getElementById("loginForm")
+function calculateSecretKey() {
+    document.getElementById("loginButton").value = "Calculating secret key, please wait..."
+    const form = document.getElementById("loginForm")
     const clientRandomInt = Math.round(Math.random() * 2**32)
     document.getElementById("clientRandom").value = clientRandomInt
     const clientRandom = int2bytes(clientRandomInt)
     const serverRandom = int2bytes({{server_random}})
-
-    document.getElementById("loginForm").onsubmit = function() {
-        // derive shared key
-        const preSecret = document.getElementById("preSecret")
-        const userPreSecret = str2ints(preSecret.value)
-        field.removeChild(preSecret)
-        const keyMaterial = userPreSecret.concat(clientRandom).concat(serverRandom)
-        sha256(keyMaterial).then((hash) => localStorage.setItem("secretKey", hash))
-    };
+    const preSecret = document.getElementById("preSecret")
+    const userPreSecret = str2ints(preSecret.value)
+    form.removeChild(preSecret)
+    const keyMaterial = userPreSecret.concat(clientRandom).concat(serverRandom)
+    sha256_16(keyMaterial).then((hash) => {
+        localStorage.setItem("secretKey", hash)
+        form.submit()
+    })
 }
     </script>
   </head>
   <body>
     <h1>Login</h1>
     <form id="loginForm" action="/login" method="POST" class="Form">
+      <input type="text" name="name" placeholder="Name"/>
       <input type="password" name="password" placeholder="Password"/>
       <input id="preSecret" type="password" name="preSecret" placeholder="Pre-Secret"/>
       <input id="clientRandom" name="clientRandom" value=0 hidden="true"/>
       <input id="serverRandom" name="serverRandom" value={{server_random}} hidden="true"/>
-      <input type="submit" value="Login" class="button"/>
+      <input id="loginButton" type="button" value="Login" onclick="calculateSecretKey()"/>
+      <!--<input type="submit" value="Login" class="button"/>-->
     </form>
   </body>
 </html>

@@ -12,12 +12,12 @@ import zipfile
 
 # init app and secret key
 app = Flask(__name__)
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0 # never cache any responses
 app.secret_key = token_bytes(32) # 256 bit
 login_pw_hash = b"\xe1\xe62f\x1e\x93\x05\x8b\xcb\xbd\xba\xf6:\xdd9\x9f\xf6\t\xe0\x07G\xc1\xbc\xd8\x06\xd1V_&\xd2e\x18"
-pre_secret = b"Password > ECDH?" # can be changed, but invalidates existing sessions
+pre_secret = b"Password > ECDH?" # change before deploying
 
 base_path = "/mnt/public/"
-pre_keys = {}
 secret_keys = {}
 download_ids = {}
 
@@ -26,7 +26,9 @@ def derive_secret_key(client_random, server_random) -> AESGCM:
     c = int(client_random).to_bytes(4, byteorder="big")
     s = int(server_random).to_bytes(4, byteorder="big")
     key_material = pre_secret + c + s
-    derived_key = sha256(key_material).digest() # JS only supports sha256 natively... (f JS)
+    derived_key = key_material
+    for i in range(2<<16):
+        derived_key = sha256(derived_key).digest() # JS only supports sha256 natively... (f JS)
     return AESGCM(derived_key)
 
 
@@ -57,7 +59,7 @@ def index():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    global pre_keys, secret_keys
+    global secret_keys
 
     if "id" in session and session["id"] in secret_keys:
         return redirect("/download/")
@@ -67,19 +69,22 @@ def login():
         return render_template("login.html", server_random=r)
 
     pw = request.form.get("password")
+    name = request.form.get("name")
     client_random = request.form.get("clientRandom")
     server_random = request.form.get("serverRandom")
     if not pw or not client_random or not server_random:
         return redirect("/login")
+    if not name or any(name == existing_name for _, existing_name in secret_keys.values()):
+        name = "user-" + str(len(secret_keys)+1)
 
     h = pbkdf2_hmac("sha256", pw.encode(), b"p3pery-$4lt", 2<<16)
     if h == login_pw_hash: # create new secret key for each login
         secret_key = derive_secret_key(client_random, server_random)
         session_id = token_bytes(8)
-        secret_keys[session_id] = secret_key
-        print(f"[*] Created new key for {session_id}")
+        secret_keys[session_id] = secret_key, name
+        print(f"[*] Created new key for {name}")
         session["id"] = session_id
-        session.permanent = True # do not expire session after closing the browser
+        session.permanent = True # do not expire session after closing the browser, expires after 31 days
         return redirect("/check")
 
     return redirect("/login")
@@ -89,7 +94,7 @@ def login():
 def check_keys():
     if "id" not in session or not session["id"] in secret_keys:
         return redirect("/login")
-    key = secret_keys[session["id"]]
+    key, _ = secret_keys[session["id"]]
 
     if request.method == "GET":
         test_val = token_bytes(32).hex()
@@ -121,7 +126,7 @@ def logout():
 def download(filepath):
     if "id" not in session or not session["id"] in secret_keys:
         return redirect("/login")
-    key = secret_keys[session["id"]]
+    key, name = secret_keys[session["id"]]
 
     if filepath != "": # non empty file(path) requested
         iv = request.args.get("iv")
@@ -138,7 +143,7 @@ def download(filepath):
 
     p = join(base_path, filepath)
     if isdir(p):
-        print(f"[*] Requested contents of {p}")
+        print(f"[*] {name} requested contents of {p}")
         files = [join(p, fp) for fp in listdir(p)]
         # appends / for directories
         files = [fp + "/" if isdir(fp) else fp for fp in files]
@@ -149,15 +154,13 @@ def download(filepath):
         for fp in files:
             iv, cipher = encrypt_aes(fp, key)
             files_enc.append({"iv": iv, "name": cipher})
-        print(f"[#] Encrypted filepaths in {p}")
         # add last folder to navigate back
         back = "/".join(filepath.split("/")[:-2]) + "/"
         iv, cipher = encrypt_aes(back, key)
         files_enc.insert(0, {"iv": iv, "name": cipher})
         return render_template("filelist.html", filelist=files_enc, back_cipher=cipher, back_iv=iv)
 
-    print(f"[*] Requested download for {p}")
-    # fp = "/" + "/".join(p.split("/")[:-1]) + "/" # /a/b/c.txt -> /a/b/
+    print(f"[*] {name} requested download for {p}")
     global download_ids
     file_id = token_bytes(16).hex() # 128 bit
     download_ids[file_id] = p
@@ -170,29 +173,29 @@ def download_with_random_name(file_id):
     global download_ids
     if "id" not in session or session["id"] not in secret_keys:
         return redirect("/login")
-    key = secret_keys[session["id"]]
+    key, name = secret_keys[session["id"]]
 
     if file_id not in download_ids:
         return f"File ID {file_id} no longer valid", 410 # rare "410 gone" use case - wow
 
     p = download_ids.pop(file_id) # id only valid for one download
-    print(f"[#] Got id {file_id} => downloading {p}")
-
     if not isfile(p):
         return "ID valid but file not found", 404
+    print(f"[*] {name} sent id {file_id} => downloading {p}")
 
     with open(p, "rb") as file:
         data = file.read()
 
-    name = p.split("/")[-1]
-    fp = p[len(base_path):-len(name)]
-    fp_iv, fp_enc = encrypt_aes(fp, key)
-    data = makezip(name, data)
+    filename = p.split("/")[-1]
+    filepath = p[len(base_path):-len(filename)]
+    fp_iv, fp_enc = encrypt_aes(filepath, key)
+    data = makezip(filename, data)
     filecontent = b64encode(data).decode("utf-8")
     iv, cipher = encrypt_aes(filecontent, key)
     return render_template("download.html", filecontent_enc=cipher, iv=iv, fp_enc=fp_enc, fp_iv=fp_iv)
 
 
+"""
 @app.errorhandler(Exception)
 def handle_exception(e):
     if isinstance(e, HTTPException): # don't catch 4xx errors
@@ -200,4 +203,4 @@ def handle_exception(e):
 
     print(f"[!] Error: {e}")
     return "Bad Request<!--you made the server vewy angwy, pls stop-->", 400
-
+"""
