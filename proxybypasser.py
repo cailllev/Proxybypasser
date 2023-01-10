@@ -6,6 +6,7 @@ from io import BytesIO
 from itertools import cycle
 from os.path import isdir, isfile, join
 from os import listdir
+from re import search
 from secrets import token_bytes
 from werkzeug.exceptions import HTTPException
 from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
@@ -60,6 +61,20 @@ def decrypt_aes(cipher: str, iv: str, key: AESGCM) -> str:
     return key.decrypt(iv, cipher, None).decode()
 
 
+def search_and_replace_longest_occ(data, to_replace):
+    i = longest_occ = start_ind = 0
+    while True:
+        r = search("(QUFB)+", data[i:])
+        if not r:
+            break
+        if (l := r.end() - r.start()) > longest_occ:
+            longest_occ = l
+            start_ind = r.start() + i
+        i += r.end()
+    reps = int(longest_occ / len(to_replace))
+    return f'"{data[:start_ind]}" + "{to_replace}".repeat({reps}) + "{data[start_ind+longest_occ:]}"'
+
+
 @app.route("/")
 def index():
     return redirect("/login")
@@ -102,7 +117,7 @@ def login():
 def check_keys():
     if "id" not in session or not session["id"] in secret_keys:
         return redirect("/login")
-    key, _ = secret_keys[session["id"]]
+    key, name = secret_keys[session["id"]]
 
     if request.method == "GET":
         test_val = token_bytes(32).hex()
@@ -118,13 +133,15 @@ def check_keys():
     if test_val == decrypt_aes(test_val_enc, iv, key):
         return redirect("/download/")
 
+    print(f"[!] Failed login for {name}")
     return redirect("/logout") # wrong pre-secret
 
 
 @app.route("/logout", methods=["GET"])
 def logout():
     if "id" in session and session["id"] in secret_keys:
-        secret_keys.pop(session["id"])
+        _, name = secret_keys.pop(session["id"])
+        print(f"[*] Deleting session for {name}")
     session.clear()
     return redirect("/login")
 
@@ -212,10 +229,12 @@ def download_with_random_name(file_id):
         len_real_data += 100 # zip header & co
         to_encrypt = data_b64[:len_real_data]
         junk = data_b64[len_real_data:]
+        junk = search_and_replace_longest_occ(junk, "QUFB") # b64("AAA") => QUFB
         bypass_query = "&b=1"
     else:
         to_encrypt = data_b64
-        junk = bypass_query = ""
+        junk = '""'
+        bypass_query = ""
     iv, cipher = encrypt_aes(to_encrypt, key)
     return render_template("download.html", filecontent_enc=cipher, iv=iv, junk=junk, fp_enc=fp_enc, fp_iv=fp_iv, bypass_query=bypass_query)
 
