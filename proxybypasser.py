@@ -64,7 +64,7 @@ def decrypt_aes(cipher: str, iv: str, key: AESGCM) -> str:
 def search_and_replace_longest_occ(data, to_replace):
     i = longest_occ = start_ind = 0
     while True:
-        r = search("(QUFB)+", data[i:])
+        r = search(f"({to_replace})+", data[i:])
         if not r:
             break
         if (l := r.end() - r.start()) > longest_occ:
