@@ -16,7 +16,7 @@ app = Flask(__name__)
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0 # never cache any responses
 app.secret_key = token_bytes(32) # 256 bit
 login_pw_hash = b"\xe1\xe62f\x1e\x93\x05\x8b\xcb\xbd\xba\xf6:\xdd9\x9f\xf6\t\xe0\x07G\xc1\xbc\xd8\x06\xd1V_&\xd2e\x18"
-pre_secret = b"Password > ECDH?" # change before deploying
+pre_secret = b'Password > ECDH?' # change before deployment
 
 base_path = "/mnt/public/"
 secret_keys = {}
