@@ -11,6 +11,13 @@ from secrets import token_bytes
 from werkzeug.exceptions import HTTPException
 from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
 
+import logging
+logging.basicConfig(
+        filename="log.txt",
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        level=logging.INFO
+)
+
 # init app and secret key
 app = Flask(__name__)
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0 # never cache any responses
@@ -25,13 +32,12 @@ download_ids = {}
 av_bypass_size = 50_000 * 1024 # defender doesn't scan downloaded files > 50MB
 
 
-def derive_secret_key(client_random, server_random) -> AESGCM:
+def derive_secret_key(client_random: str, server_random: str, salt: str) -> AESGCM:
     c = int(client_random).to_bytes(4, byteorder="big")
     s = int(server_random).to_bytes(4, byteorder="big")
+    salt = bytes.fromhex(salt)
     key_material = pre_secret + c + s
-    derived_key = key_material
-    for i in range(2<<16):
-        derived_key = sha256(derived_key).digest() # JS only supports sha256 natively... (f JS)
+    derived_key = pbkdf2_hmac("sha256", key_material, salt, 2**20)
     return AESGCM(derived_key)
 
 
@@ -89,23 +95,25 @@ def login():
 
     if request.method == "GET":
         r = int.from_bytes(token_bytes(4), byteorder="big")
-        return render_template("login.html", server_random=r)
+        s = token_bytes(16).hex()
+        return render_template("login.html", server_random=r, salt=s)
 
     pw = request.form.get("password")
     name = request.form.get("name")
     client_random = request.form.get("clientRandom")
     server_random = request.form.get("serverRandom")
-    if not pw or not client_random or not server_random:
+    salt = request.form.get("salt")
+    if not pw or not client_random or not server_random or not salt:
         return redirect("/login")
     if not name or any(name == existing_name for _, existing_name in secret_keys.values()):
         name = "user-" + str(len(secret_keys)+1)
 
     h = pbkdf2_hmac("sha256", pw.encode(), b"p3pery-$4lt", 2<<16)
     if h == login_pw_hash: # create new secret key for each login
-        secret_key = derive_secret_key(client_random, server_random)
+        secret_key = derive_secret_key(client_random, server_random, salt)
         session_id = token_bytes(8)
         secret_keys[session_id] = secret_key, name
-        print(f"[*] Created new key for {name}")
+        logging.debug(f"[*] Created new key for {name}")
         session["id"] = session_id
         session.permanent = True # do not expire session after closing the browser, expires after 31 days
         return redirect("/check")
@@ -133,7 +141,7 @@ def check_keys():
     if test_val == decrypt_aes(test_val_enc, iv, key):
         return redirect("/download/")
 
-    print(f"[!] Failed login for {name}")
+    logging.debug(f"[!] Failed login for {name}")
     return redirect("/logout") # wrong pre-secret
 
 
@@ -141,7 +149,7 @@ def check_keys():
 def logout():
     if "id" in session and session["id"] in secret_keys:
         _, name = secret_keys.pop(session["id"])
-        print(f"[*] Deleting session for {name}")
+        logging.debug(f"[*] Deleting session for {name}")
     session.clear()
     return redirect("/login")
 
@@ -158,7 +166,7 @@ def download(filepath):
     if filepath != "": # non empty file(path) requested
         iv = request.args.get("iv")
         if not iv:
-            print("[#] IV missing in request!")
+            logging.debug("[#] IV missing in request!")
             return redirect("/download/")
         filepath = decrypt_aes(filepath, iv, key)
 
@@ -170,7 +178,7 @@ def download(filepath):
 
     p = join(base_path, filepath)
     if isdir(p):
-        print(f"[*] {name} requested contents of {p}")
+        logging.debug(f"[*] {name} requested contents of {p}")
         files = [join(p, fp) for fp in listdir(p)]
         # appends / for directories
         files = [fp + "/" if isdir(fp) else fp for fp in files]
@@ -188,10 +196,10 @@ def download(filepath):
         checked = "checked" if size_bypass else ""
         return render_template("filelist.html", filelist=files_enc, back_cipher=cipher, back_iv=iv, checked=checked)
 
-    print(f"[*] {name} requested download for {p} with bypass = {size_bypass}")
+    logging.debug(f"[*] {name} requested download for {p} with bypass = {size_bypass}")
     file_id = token_bytes(16).hex() # 128 bit
     download_ids[file_id] = p
-    print(f"[#] Created id: {file_id} => {p}")
+    logging.debug(f"[#] Created id: {file_id} => {p}")
 
     link = f"/d/{file_id}"
     if size_bypass:
@@ -213,7 +221,7 @@ def download_with_random_name(file_id):
     if not isfile(p):
         return "ID valid but file not found", 404
     size_bypass = True if request.args.get("b") else False
-    print(f"[*] {name} sent id {file_id} => downloading {p} with bypass = {size_bypass}")
+    logging.debug(f"[*] {name} sent id {file_id} => downloading {p} with bypass = {size_bypass}")
 
     with open(p, "rb") as file:
         data = file.read()
@@ -244,5 +252,5 @@ def handle_exception(e):
     if isinstance(e, HTTPException): # don't catch 4xx errors
         return e
 
-    print(f"[!] Error: {e}")
+    logging.error(f"[!] Error: {e}")
     return "Bad Request<!--you made the server vewy angwy, pls stop-->", 400
