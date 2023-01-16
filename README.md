@@ -22,3 +22,7 @@ read -p "Enter your pre-secret: " pre_secret && sed s/"^pre_secret = .*"/"pre_se
 pip3 install -r requirements.txt
 ./start_server.sh
 ```
+
+# TODO
+- implement JS rendering for tests
+- add functionality to change the password (-> automatically adapt the password hash in proxybypasser.py)
