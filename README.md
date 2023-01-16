@@ -26,3 +26,4 @@ pip3 install -r requirements.txt
 # TODO
 - implement JS rendering for tests
 - add functionality to change the password (-> automatically adapt the password hash in proxybypasser.py)
+- add a sequence diagram
