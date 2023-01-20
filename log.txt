@@ -1,16 +1,1 @@
-2023-01-20 08:54:17,133 - INFO - [*] Created new key for Levi
-2023-01-20 08:54:17,224 - INFO - [*] Levi requested contents of /mnt/public/
-2023-01-20 08:54:24,978 - INFO - [*] Levi requested download for /mnt/public/virtualenv.zip with bypass = False
-2023-01-20 08:54:24,978 - INFO - [#] Created id: 7f5974f1aa7c8617f6445416b0e9fc5c => /mnt/public/virtualenv.zip
-2023-01-20 08:54:24,989 - INFO - [*] Levi sent id 7f5974f1aa7c8617f6445416b0e9fc5c => downloading /mnt/public/virtualenv.zip with bypass = False
-2023-01-20 08:58:22,071 - INFO - [*] Levi requested contents of /mnt/public/
-2023-01-20 08:58:26,577 - INFO - [*] Levi requested contents of /mnt/public/rolj/
-2023-01-20 08:58:29,408 - INFO - [*] Levi requested contents of /mnt/public/rolj/sig/
-2023-01-20 08:58:31,455 - INFO - [*] Levi requested contents of /mnt/public/rolj/
-2023-01-20 08:58:33,196 - INFO - [*] Levi requested contents of /mnt/public/rolj/artifacts/
-2023-01-20 08:58:34,223 - INFO - [*] Levi requested contents of /mnt/public/rolj/artifacts/nighthawk/
-2023-01-20 08:58:35,780 - INFO - [*] Levi requested contents of /mnt/public/rolj/artifacts/
-2023-01-20 08:58:36,690 - INFO - [*] Levi requested contents of /mnt/public/rolj/
-2023-01-20 08:58:38,701 - INFO - [*] Levi requested contents of /mnt/public/
-2023-01-20 08:58:40,551 - INFO - [*] Levi requested contents of /mnt/public/
-2023-01-20 08:58:41,840 - INFO - [*] Levi requested contents of /mnt/public/campaign-1/
+
