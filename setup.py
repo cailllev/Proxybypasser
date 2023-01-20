@@ -17,7 +17,7 @@ def replace_in_file(old, new):
 
 def main():
     root_dir = input("[*] Please enter the root directory of the webserver (files in this folder will be available for downloading): ")
-    replace_in_file('base_path = ".*"', root_dir)
+    replace_in_file('base_path = ".*"', f'base_path = "{root_dir}"\n')
 
     pre_secret = input("[*] Please enter your pre secret: ")
     replace_in_file('pre_secret = b".*"', f'pre_secret = b"{pre_secret}"\n')

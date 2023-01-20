@@ -25,7 +25,8 @@ app.secret_key = token_bytes(32) # 256 bit
 login_pw_hash = "179952e9825ad2f9e53acb7df06fd45aa63f7ca98848c6f24fa11dca1ca0f320"
 pre_secret = b"Password > ECDH?"
 
-/mnt/publicsecret_keys = {}
+base_path = "/mnt/public"
+secret_keys = {}
 download_ids = {}
 
 av_bypass_size = 50_000 * 1024 # defender doesn't scan downloaded files > 50MB
