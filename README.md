@@ -16,9 +16,9 @@ A proper key-exchange could be intercepted, unless the server has a known certif
 
 # Setup
 ```
-git clone https://github.com/dobin/Proxybypasser
+git clone https://github.com/cailllev/Proxybypasser
 cd Proxybypasser
-read -p "Enter your pre-secret: " pre_secret && sed s/"^pre_secret = .*"/"pre_secret = b'$pre_secret'"/ -i proxybypasser.py
+python3 setup.py
 pip3 install -r requirements.txt
 ./start_server.sh
 ```

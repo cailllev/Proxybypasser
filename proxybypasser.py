@@ -22,11 +22,10 @@ logging.basicConfig(
 app = Flask(__name__)
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0 # never cache any responses
 app.secret_key = token_bytes(32) # 256 bit
-login_pw_hash = b"\xe1\xe62f\x1e\x93\x05\x8b\xcb\xbd\xba\xf6:\xdd9\x9f\xf6\t\xe0\x07G\xc1\xbc\xd8\x06\xd1V_&\xd2e\x18"
-pre_secret = b'Password > ECDH?' # change before deployment
+login_pw_hash = "179952e9825ad2f9e53acb7df06fd45aa63f7ca98848c6f24fa11dca1ca0f320"
+pre_secret = b"Password > ECDH?"
 
-base_path = "/mnt/public/"
-secret_keys = {}
+/mnt/publicsecret_keys = {}
 download_ids = {}
 
 av_bypass_size = 50_000 * 1024 # defender doesn't scan downloaded files > 50MB
@@ -108,12 +107,12 @@ def login():
     if not name or any(name == existing_name for _, existing_name in secret_keys.values()):
         name = "user-" + str(len(secret_keys)+1)
 
-    h = pbkdf2_hmac("sha256", pw.encode(), b"p3pery-$4lt", 2<<16)
+    h = pbkdf2_hmac("sha256", pw.encode(), b"p3pery-$4lt", 1<<20).hex()
     if h == login_pw_hash: # create new secret key for each login
         secret_key = derive_secret_key(client_random, server_random, salt)
         session_id = token_bytes(8)
         secret_keys[session_id] = secret_key, name
-        logging.debug(f"[*] Created new key for {name}")
+        logging.info(f"[*] Created new key for {name}")
         session["id"] = session_id
         session.permanent = True # do not expire session after closing the browser, expires after 31 days
         return redirect("/check")
@@ -141,7 +140,7 @@ def check_keys():
     if test_val == decrypt_aes(test_val_enc, iv, key):
         return redirect("/download/")
 
-    logging.debug(f"[!] Failed login for {name}")
+    logging.info(f"[!] Failed login for {name}")
     return redirect("/logout") # wrong pre-secret
 
 
@@ -149,7 +148,7 @@ def check_keys():
 def logout():
     if "id" in session and session["id"] in secret_keys:
         _, name = secret_keys.pop(session["id"])
-        logging.debug(f"[*] Deleting session for {name}")
+        logging.info(f"[*] Deleting session for {name}")
     session.clear()
     return redirect("/login")
 
@@ -166,7 +165,7 @@ def download(filepath):
     if filepath != "": # non empty file(path) requested
         iv = request.args.get("iv")
         if not iv:
-            logging.debug("[#] IV missing in request!")
+            logging.info("[#] IV missing in request!")
             return redirect("/download/")
         filepath = decrypt_aes(filepath, iv, key)
 
@@ -178,7 +177,7 @@ def download(filepath):
 
     p = join(base_path, filepath)
     if isdir(p):
-        logging.debug(f"[*] {name} requested contents of {p}")
+        logging.info(f"[*] {name} requested contents of {p}")
         files = [join(p, fp) for fp in listdir(p)]
         # appends / for directories
         files = [fp + "/" if isdir(fp) else fp for fp in files]
@@ -196,10 +195,10 @@ def download(filepath):
         checked = "checked" if size_bypass else ""
         return render_template("filelist.html", filelist=files_enc, back_cipher=cipher, back_iv=iv, checked=checked)
 
-    logging.debug(f"[*] {name} requested download for {p} with bypass = {size_bypass}")
+    logging.info(f"[*] {name} requested download for {p} with bypass = {size_bypass}")
     file_id = token_bytes(16).hex() # 128 bit
     download_ids[file_id] = p
-    logging.debug(f"[#] Created id: {file_id} => {p}")
+    logging.info(f"[#] Created id: {file_id} => {p}")
 
     link = f"/d/{file_id}"
     if size_bypass:
@@ -221,7 +220,7 @@ def download_with_random_name(file_id):
     if not isfile(p):
         return "ID valid but file not found", 404
     size_bypass = True if request.args.get("b") else False
-    logging.debug(f"[*] {name} sent id {file_id} => downloading {p} with bypass = {size_bypass}")
+    logging.info(f"[*] {name} sent id {file_id} => downloading {p} with bypass = {size_bypass}")
 
     with open(p, "rb") as file:
         data = file.read()
