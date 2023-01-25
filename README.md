@@ -12,7 +12,15 @@ Because we can, and see above.
 - Encrypts folder and file names to hide critical information like "campaign-4/" or "cobaltstrike-https.exe". Additionally generates a unique download link for each download, and redirects to this id, so that the download links never repeat, even for the same file and same user.
 
 ## Why a "pre-secret" instead of a "proper key-exchange"?
-A proper key-exchange could be intercepted, unless the server has a known certificate and signs it's key exchange parameters with this certificate. Too much komplexity compared to a simple pre-secret and hashing. Additionally, a MitM can always intercept the public cert and replace it with it's own, so we'd need a certificate from a trusted root CA, and we need to be certain that the client does not have a root CA from the blue-team on their device. With a pre-secret the MitM cannot intercept the connection without breaking it, they'd need the pre-secret to derive the shared secret key to decrypt the encryption. Disproofing this would be much apprecheated.
+A proper key-exchange could be intercepted, unless the server has a known certificate and signs it's key exchange parameters with this certificate. 
+Too much komplexity compared to a simple pre-secret and hashing. Additionally, a MitM can always intercept the public cert and replace it with it's own, so we'd need a certificate from a trusted root CA, and we need to be certain that the client does not have a root CA from the blue-team on their device. With a pre-secret the MitM cannot intercept the connection without breaking it, they'd need the pre-secret to derive the shared secret key to decrypt the encryption. Disproofing this would be much apprecheated.
+
+## And why a password, when the pre-secret must be correct anyway?
+One could remove or use an empty password, and other users or a MitM still cannot access the server. 
+IMO it's as secure as when using a strong password, IF there are no exploits or weaknesses in my protocol.
+That being said, the password might protect against some attacks. 
+For example, when using a password, an attacker must first brute force the password, before they receive any encrypted material (that could be used to derive / attack the key).
+Additionally, from a clean code & functional point of view: The password controls who can access the server, and the pre-secret controls who can decrypt the files.
 
 # Setup
 ```

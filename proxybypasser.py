@@ -1,9 +1,8 @@
-from base64 import b64encode, b64decode
+from base64 import b64encode
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from flask import Flask, request, jsonify, render_template, redirect, session
-from hashlib import pbkdf2_hmac, sha256
+from flask import Flask, request, render_template, redirect, session
+from hashlib import pbkdf2_hmac
 from io import BytesIO
-from itertools import cycle
 from os.path import isdir, isfile, join
 from os import listdir
 from re import search
@@ -12,16 +11,17 @@ from werkzeug.exceptions import HTTPException
 from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
 
 import logging
+
 logging.basicConfig(
-        filename="log.txt",
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        level=logging.INFO
+    filename="log.txt",
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.INFO
 )
 
 # init app and secret key
 app = Flask(__name__)
-app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0 # never cache any responses
-app.secret_key = token_bytes(32) # 256 bit
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # never cache any responses
+app.secret_key = token_bytes(32)  # 256 bit
 login_pw_hash = "179952e9825ad2f9e53acb7df06fd45aa63f7ca98848c6f24fa11dca1ca0f320"
 pre_secret = b"Password > ECDH?"
 
@@ -29,7 +29,7 @@ base_path = "/mnt/public"
 secret_keys = {}
 download_ids = {}
 
-av_bypass_size = 50_000 * 1024 # defender doesn't scan downloaded files > 50MB
+av_bypass_size = 50_000 * 1024  # Defender doesn't scan downloaded files > 50MB
 
 
 def derive_secret_key(client_random: str, server_random: str, salt: str) -> AESGCM:
@@ -37,7 +37,7 @@ def derive_secret_key(client_random: str, server_random: str, salt: str) -> AESG
     s = int(server_random).to_bytes(4, byteorder="big")
     salt = bytes.fromhex(salt)
     key_material = pre_secret + c + s
-    derived_key = pbkdf2_hmac("sha256", key_material, salt, 2**20)
+    derived_key = pbkdf2_hmac("sha256", key_material, salt, 2 ** 20)
     return AESGCM(derived_key)
 
 
@@ -78,7 +78,7 @@ def search_and_replace_longest_occ(data, to_replace):
             start_ind = r.start() + i
         i += r.end()
     reps = int(longest_occ / len(to_replace))
-    return f'"{data[:start_ind]}" + "{to_replace}".repeat({reps}) + "{data[start_ind+longest_occ:]}"'
+    return f'"{data[:start_ind]}" + "{to_replace}".repeat({reps}) + "{data[start_ind + longest_occ:]}"'
 
 
 @app.route("/")
@@ -106,16 +106,16 @@ def login():
     if not pw or not client_random or not server_random or not salt:
         return redirect("/login")
     if not name or any(name == existing_name for _, existing_name in secret_keys.values()):
-        name = "user-" + str(len(secret_keys)+1)
+        name = "user-" + str(len(secret_keys) + 1)
 
-    h = pbkdf2_hmac("sha256", pw.encode(), b"p3pery-$4lt", 1<<20).hex()
-    if h == login_pw_hash: # create new secret key for each login
+    h = pbkdf2_hmac("sha256", pw.encode(), b"p3pery-$4lt", 1 << 20).hex()
+    if h == login_pw_hash:  # create new secret key for each login
         secret_key = derive_secret_key(client_random, server_random, salt)
         session_id = token_bytes(8)
         secret_keys[session_id] = secret_key, name
         logging.info(f"[*] Created new key for {name}")
         session["id"] = session_id
-        session.permanent = True # do not expire session after closing the browser, expires after 31 days
+        session.permanent = True  # do not expire session after closing the browser, expires after 31 days
         return redirect("/check")
 
     return redirect("/login")
@@ -142,7 +142,7 @@ def check_keys():
         return redirect("/download/")
 
     logging.info(f"[!] Failed login for {name}")
-    return redirect("/logout") # wrong pre-secret
+    return redirect("/logout")  # wrong pre-secret
 
 
 @app.route("/logout", methods=["GET"])
@@ -163,7 +163,7 @@ def download(filepath):
     key, name = secret_keys[session["id"]]
     size_bypass = True if request.args.get("b") else False
 
-    if filepath != "": # non empty file(path) requested
+    if filepath != "":  # non empty file(path) requested
         iv = request.args.get("iv")
         if not iv:
             logging.info("[#] IV missing in request!")
@@ -173,7 +173,7 @@ def download(filepath):
     # secure_filename removes all /, not working here
     if ".." in filepath:
         return "File name must not contain ..", 400
-    while filepath.startswith("/"): # path.join("/a/b", "/c") -> "/c", NOT "/a/b/c"
+    while filepath.startswith("/"):  # path.join("/a/b", "/c") -> "/c", NOT "/a/b/c"
         filepath = filepath[1:]
 
     p = join(base_path, filepath)
@@ -184,8 +184,8 @@ def download(filepath):
         files = [fp + "/" if isdir(fp) else fp for fp in files]
         # remove base path
         files = [fp.replace(base_path, "") for fp in files]
-        files.sort(key = lambda fp: fp.lower())
-        files_enc = [] # encrypt again for sending
+        files.sort(key=lambda fp: fp.lower())
+        files_enc = []  # encrypt again for sending
         for fp in files:
             iv, cipher = encrypt_aes(fp, key)
             files_enc.append({"iv": iv, "name": cipher})
@@ -197,7 +197,7 @@ def download(filepath):
         return render_template("filelist.html", filelist=files_enc, back_cipher=cipher, back_iv=iv, checked=checked)
 
     logging.info(f"[*] {name} requested download for {p} with bypass = {size_bypass}")
-    file_id = token_bytes(16).hex() # 128 bit
+    file_id = token_bytes(16).hex()  # 128 bit
     download_ids[file_id] = p
     logging.info(f"[#] Created id: {file_id} => {p}")
 
@@ -215,9 +215,9 @@ def download_with_random_name(file_id):
     key, name = secret_keys[session["id"]]
 
     if file_id not in download_ids:
-        return f"File ID {file_id} no longer valid", 410 # rare "410 gone" use case - wow
+        return f"File ID {file_id} no longer valid", 410  # rare "410 gone" use case - wow
 
-    p = download_ids.pop(file_id) # id only valid for one download
+    p = download_ids.pop(file_id)  # id only valid for one download
     if not isfile(p):
         return "ID valid but file not found", 404
     size_bypass = True if request.args.get("b") else False
@@ -232,24 +232,25 @@ def download_with_random_name(file_id):
     data_zipped = makezip(filename, data, size_bypass)
     data_b64 = b64encode(data_zipped).decode("utf-8")
 
-    if size_bypass: # only encrypt the file data, not the random bytes
-        len_real_data = int(len(data) / 6 * 8) + 1 # b64encoded length
-        len_real_data += 100 # zip header & co
+    if size_bypass:  # only encrypt the file data, not the random bytes
+        len_real_data = int(len(data) / 6 * 8) + 1  # b64encoded length
+        len_real_data += 100  # zip header & co
         to_encrypt = data_b64[:len_real_data]
         junk = data_b64[len_real_data:]
-        junk = search_and_replace_longest_occ(junk, "QUFB") # b64("AAA") => QUFB
+        junk = search_and_replace_longest_occ(junk, "QUFB")  # b64("AAA") => QUFB
         bypass_query = "&b=1"
     else:
         to_encrypt = data_b64
         junk = '""'
         bypass_query = ""
     iv, cipher = encrypt_aes(to_encrypt, key)
-    return render_template("download.html", filecontent_enc=cipher, iv=iv, junk=junk, fp_enc=fp_enc, fp_iv=fp_iv, bypass_query=bypass_query)
+    return render_template("download.html", filecontent_enc=cipher, iv=iv, junk=junk, fp_enc=fp_enc, fp_iv=fp_iv,
+                           bypass_query=bypass_query)
 
 
 @app.errorhandler(Exception)
 def handle_exception(e):
-    if isinstance(e, HTTPException): # don't catch 4xx errors
+    if isinstance(e, HTTPException):  # don't catch 4xx errors
         return e
 
     logging.error(f"[!] Error: {e}")
